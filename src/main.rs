@@ -1,10 +1,18 @@
 mod dcmobj;
+mod image_info;
+mod series_info;
+mod study_info;
+mod patient_info;
 
-use crate::dcmobj::{ImageInfo, PatientInfo, SeriesInfo, StudyInfo};
+ 
+use crate::image_info::ImageInfo;
+use crate::series_info::SeriesInfo;
+use crate::study_info::StudyInfo;
 use clap::Parser;
 use dicom::dictionary_std::tags;
 use dicom::object::OpenFileOptions;
 use std::path::PathBuf;
+use crate::patient_info::PatientInfo;
 
 #[derive(Debug, Parser)]
 #[command(version)]
@@ -48,16 +56,12 @@ fn main() {
     println!("SeriesInfo: {:?}", series_info);
     let image_info = ImageInfo::new(&obj);
     println!("ImageInfo: {:?}", image_info);
-    
 }
 
 fn file_exists(p0: &PathBuf) -> bool {
     std::fs::metadata(p0).is_ok()
 }
 
-
-
- 
 #[cfg(test)]
 mod tests {
     use crate::Application;
