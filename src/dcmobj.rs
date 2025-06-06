@@ -22,8 +22,8 @@ pub fn get_string(tag: Tag, obj: &DefaultDicomObject) -> String {
 // pub fn tag_name(tag: Tag) -> String {
 //     format!("{:?}", tag)
 // }
-// pub fn json_key(tag: Tag) -> String {
-//     let group = tag.group();
-//     let elem = tag.element();
-//     format!("x{:04X}{:04X}", group, elem)
-// }
+pub fn json_key(tag: Tag) -> String {
+    let group = tag.group();
+    let elem = tag.element();
+    format!("x{:04X}{:04X}", group, elem)
+}

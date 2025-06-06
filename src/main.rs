@@ -51,7 +51,7 @@ fn main() {
     }
     let uuid = obj.meta().transfer_syntax();
      println!("Transfer Syntax UID: [{}]", uuid);
- 
+
     let patient_info = PatientInfo::new(&obj);
     println!("PatientInfo: {:?}", patient_info);
     let study_info = StudyInfo::new(&obj);
@@ -60,9 +60,13 @@ fn main() {
     println!("SeriesInfo: {:?}", series_info);
     let image_info = ImageInfo::new(&obj);
     println!("ImageInfo: {:?}", image_info);
-    
+
     let dicom_info = DicomInfo::new(&obj);
     println!("DicomInfo: {:?}", dicom_info);
+
+    let json = serde_json::to_string(&dicom_info).unwrap();
+    std::fs::write(&app.output_file, json).unwrap();
+    
 }
 
 fn file_exists(p0: &PathBuf) -> bool {
