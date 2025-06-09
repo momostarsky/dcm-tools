@@ -25,3 +25,4 @@ dicom_codegen/Cargo.lock/target/debug
 *.lock
 *.rmeta
 .cargo-lock
+Cargo.lock

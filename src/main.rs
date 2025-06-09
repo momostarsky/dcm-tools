@@ -4,6 +4,7 @@ mod series_info;
 mod study_info;
 mod patient_info;
 mod dicom_info;
+mod dcm_meta;
 
 use crate::image_info::ImageInfo;
 use crate::series_info::SeriesInfo;
@@ -12,6 +13,7 @@ use clap::Parser;
 use dicom::dictionary_std::tags;
 use dicom::object::OpenFileOptions;
 use std::path::PathBuf;
+use crate::dcm_meta::{DcmMapMeta, DcmMeta};
 use crate::dicom_info::DicomInfo;
 use crate::patient_info::PatientInfo;
 
@@ -63,7 +65,10 @@ fn main() {
 
     let dicom_info = DicomInfo::new(&obj);
     println!("DicomInfo: {:?}", dicom_info);
-
+    let metadata = DcmMeta::new(&obj);  
+    println!("DicomInfo: {:?}", metadata);
+    let map_tag = DcmMapMeta::new(&obj);
+    println!("DicomInfo: {:?}", map_tag);
     let json = serde_json::to_string(&dicom_info).unwrap();
     std::fs::write(&app.output_file, json).unwrap();
     
