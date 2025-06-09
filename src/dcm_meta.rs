@@ -30,11 +30,11 @@ impl DcmMeta {
 #[derive(TagMapAccessors, Debug, Parser, Clone)]
 pub struct DcmMapMeta {
     #[map_tag(tag_name(0x0028, 0x0100))]
-    pub bit_allocated: i32,
+    pub bit_allocated: u16,
     #[map_tag(tag_name(0x0028, 0x0101))]
-    pub bits_stored: i32,
+    pub bits_stored: u16,
     #[map_tag(tag_name(0x0028, 0x0102))]
-    pub high_bit: i32,
+    pub high_bit: u16,
 }
 
 impl DcmMapMeta {
@@ -44,5 +44,28 @@ impl DcmMapMeta {
             bits_stored: obj.element(Tag(0x0028, 0x0101)).unwrap().to_int().unwrap(),
             high_bit: obj.element(Tag(0x0028, 0x0102)).unwrap().to_int().unwrap(),
         }
+    }
+
+    // 私有函数示例：验证位数是否合法
+    fn validate_bits(&self) -> Result<(), String> {
+        if self.bit_allocated <= 0 || self.bit_allocated > 32 {
+            return Err("bit_allocated is between (0,32]".to_string());
+        }
+        if self.bit_allocated % 8 != 0 {
+            return Err("bit_allocated must be a multiple of 8".to_string());
+        }
+        if self.bit_allocated < self.bits_stored {
+            return Err("bit_allocated must be >= bits_stored".to_string());
+        }
+
+        if self.high_bit >= self.bits_stored {
+            return Err("high_bit must be < bits_stored".to_string());
+        }
+        Ok(())
+    }
+
+    // 公共函数使用了私有函数
+    pub fn check_valid(&self) -> bool {
+        self.validate_bits().is_ok()
     }
 }

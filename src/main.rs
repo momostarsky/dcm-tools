@@ -68,7 +68,7 @@ fn main() {
     let metadata = DcmMeta::new(&obj);  
     println!("DicomInfo: {:?}", metadata);
     let map_tag = DcmMapMeta::new(&obj);
-    println!("DicomInfo: {:?}", map_tag);
+    println!("DicomInfo: {:?}-->{:?}", map_tag, map_tag.check_valid());
     let json = serde_json::to_string(&dicom_info).unwrap();
     std::fs::write(&app.output_file, json).unwrap();
     

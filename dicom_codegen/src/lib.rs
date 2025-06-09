@@ -147,25 +147,30 @@ pub fn dicom_tag_accessors(input: TokenStream) -> TokenStream {
 // }
 #[proc_macro_derive(TagMapAccessors, attributes(map_tag))]
 pub fn tag_map_accessors(input: TokenStream) -> TokenStream {
+    // 解析字段上的 #[map_tag()] 形式的参数
     let input = parse_macro_input!(input as DeriveInput);
 
     let name = &input.ident;
     let mut getters = vec![];
-
+    eprintln!("Parsing root name: {:?}", name.to_string());
+    
     if let syn::Data::Struct(ref data) = input.data {
         for field in &data.fields {
+            //获取属性名称 eg: bit_allocated bits_stored  high_bit
             let field_ident = field.ident.as_ref().unwrap();
+            eprintln!("field_ident: {:?}", field_ident.to_string()); 
             for attr in &field.attrs {
                 if attr.path().is_ident("map_tag") {
                     let mut group = None;
                     let mut element = None;
-
+                   
                     attr.parse_nested_meta(|meta| {
                         if meta.path.is_ident("tag_name") {
                             let content;
                             parenthesized!(content in meta.input);
                             eprintln!("Parsing tag_name: {:?}", content.to_string());
                             let group_lit: LitInt = content.parse()?;
+                            //解析 逗号。
                             let _: syn::Token![,] = content.parse()?; // parse the comma
                             let element_lit: LitInt = content.parse()?;
                             eprintln!("Parsing group: {:?}", group_lit.to_string());
@@ -189,6 +194,9 @@ pub fn tag_map_accessors(input: TokenStream) -> TokenStream {
                 }
             }
         }
+    }  else {
+        // Handle other data types, e.g., enums or unions
+        eprintln!("Only structs are supported by this macro.");
     }
 
     let expanded = quote! {
