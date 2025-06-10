@@ -6,18 +6,8 @@ mod patient_info;
 mod series_info;
 mod study_info;
 
-use crate::dcm_meta::{DcmMapMeta, DcmMeta};
-use crate::dcmobj::{convert_ts_with_gdcm, convert_ts_with_pixel_data, file_exists};
-use crate::dicom_info::DicomInfo;
-use crate::image_info::ImageInfo;
-use crate::patient_info::PatientInfo;
-use crate::series_info::SeriesInfo;
-use crate::study_info::StudyInfo;
+use crate::dcmobj::file_exists;
 use clap::Parser;
-use dicom::dictionary_std::tags;
-use dicom::encoding::decode::BasicDecode;
-use dicom::encoding::TransferSyntaxIndex;
-use dicom::object::OpenFileOptions;
 use std::path::PathBuf;
 
 #[derive(Debug, Parser)]
@@ -40,66 +30,9 @@ fn main() {
         println!("{}: File  not exists", app.input_file.to_str().unwrap());
         return;
     }
-    let input_path = &app.input_file;
-    let obj = OpenFileOptions::new()
-        .read_until(tags::PIXEL_DATA)
-        .open_file(input_path)
-        .unwrap();
-    // let obj = open_file(&app.input_file).unwrap();
-    let patient_id_exists = obj.element_opt(tags::PATIENT_ID).is_ok();
-    let study_uid_exists = obj.element_opt(tags::STUDY_INSTANCE_UID).is_ok();
-    let series_uid_exists = obj.element_opt(tags::SERIES_INSTANCE_UID).is_ok();
-    let sop_uid_exists = obj.element_opt(tags::SOP_INSTANCE_UID).is_ok();
-    if !patient_id_exists || !study_uid_exists || !series_uid_exists || !sop_uid_exists {
-        println!(" Tags: PatientId, StudyUID, SeriesUID,SopInstanceUID is not exists !");
-        return;
-    }
-    let uuid = obj.meta().transfer_syntax();
-    println!("Transfer Syntax UID: [{}]", uuid);
-
-    let patient_info = PatientInfo::new(&obj);
-    println!("PatientInfo: {:?}", patient_info);
-    let study_info = StudyInfo::new(&obj);
-    println!("StudyInfo: {:?}", study_info);
-    let series_info = SeriesInfo::new(&obj);
-    println!("SeriesInfo: {:?}", series_info);
-    let image_info = ImageInfo::new(&obj);
-    println!("ImageInfo: {:?}", image_info);
-
-    let dicom_info = DicomInfo::new(&obj);
-    println!("DicomInfo: {:?}", dicom_info);
-    let metadata = DcmMeta::new(&obj);
-    println!("DicomInfo: {:?}", metadata);
-    let map_tag = DcmMapMeta::new(&obj);
-    println!("DicomInfo: {:?}-->{:?}", map_tag, map_tag.check_valid());
-    let json = serde_json::to_string(&dicom_info).unwrap();
-    std::fs::write(&app.output_file, json).unwrap();
-    use dicom_transfer_syntax_registry::TransferSyntaxRegistry;
-
-    let uid = dicom_info.transfer_syntax_uid.as_str(); // "1.2.840.10008.1.2.1"; // 例如：Explicit VR Little Endian
-    if let Some(ts) = TransferSyntaxRegistry.get(uid) {
-        // ts 是 TransferSyntax 的引用，可以直接使用
-        println!("Found transfer syntax: {:?}", uid);
-        println!("Name: {}", ts.name());
-        println!(
-            "Is Little ? {}",
-            ts.basic_decoder().endianness() == dicom::encoding::Endianness::Little
-        );
-    } else {
-        println!("Unknown transfer syntax UID: {}", uid);
-    }
-
-    let lx = &app.output_file.to_str().unwrap().len();
- 
-    let filename2 = format!("{}__22.dcm", &app.output_file.to_str().unwrap()[..lx - 5]);
-
-    convert_ts_with_gdcm(&app.input_file, filename2).unwrap();
-
-    let filename3 = format!("{}__33.dcm", &app.output_file.to_str().unwrap()[..lx - 5]);
-    println!("{}", filename3);
-    convert_ts_with_pixel_data(&app.input_file, filename3).unwrap();
+    println!("{}: File  exists", app.input_file.to_str().unwrap());
+    println!("{}: target file ", app.output_file.to_str().unwrap());
 }
-
 
 // fn convert_ts(p0: &PathBuf, output_path: String) -> Result<(), Box<dyn std::error::Error>> {
 //     // 步骤 1: 读取 DICOM 文件
@@ -109,10 +42,10 @@ fn main() {
 //         .unwrap();
 //     // clone 一份对象用于构建新文件
 //     let meta = obj.meta().clone();
-// 
+//
 //     let sop_class_uid = meta.media_storage_sop_class_uid;
 //     let sop_inst_uid = meta.media_storage_sop_instance_uid;
-// 
+//
 //     // 步骤 3: 创建一个新的 DICOM 文件对象并设置传输语法
 //     let file_obj = FileMetaTableBuilder::new()
 //         .media_storage_sop_class_uid(sop_class_uid)
@@ -122,15 +55,14 @@ fn main() {
 //         .implementation_version_name(IMPLEMENTATION_VERSION_NAME)
 //         .build()
 //         .unwrap();
-// 
+//
 //     // 注意 with_meta 返回新对象（有的版本直接返回 Result）
 //     let file_obj = DefaultDicomObject::new_empty_with_meta(file_obj);
 //     file_obj.write_to_file(output_path)?;
 //     println!("传输语法已修改并保存到  ");
 //     Ok(())
 // }
-// 
-
+//
 
 #[cfg(test)]
 mod tests {
@@ -143,6 +75,15 @@ mod tests {
     }
 
     use super::*;
+    use crate::dcm_meta::{DcmMapMeta, DcmMeta};
+    use crate::dcmobj::convert_ts_with_gdcm;
+    use crate::dicom_info::DicomInfo;
+    use crate::image_info::ImageInfo;
+    use crate::patient_info::PatientInfo;
+    use crate::series_info::SeriesInfo;
+    use crate::study_info::StudyInfo;
+    use dicom::dictionary_std::tags;
+    use dicom_object::OpenFileOptions;
     use std::fs::File;
     use std::path::PathBuf;
     use tempfile::tempdir;
@@ -177,5 +118,50 @@ mod tests {
 
         // 验证函数对目录返回 true (因为目录也是一种文件系统对象)
         assert!(file_exists(&dir.path().to_path_buf()));
+    }
+
+    #[test]
+    fn test_file_read() {
+        let input_path =
+            PathBuf::from("./test_data/1.2.840.113713.55902.1.642704.2248.1270609320.4549.dcm");
+        let output_path =
+            PathBuf::from("./test_data/A_1.2.840.113713.55902.1.642704.2248.1270609320.4549.dcm");
+        let json_path =
+            PathBuf::from("./test_data/A_1.2.840.113713.55902.1.642704.2248.1270609320.4549.json");
+        let obj = OpenFileOptions::new()
+            .read_until(tags::PIXEL_DATA)
+            .open_file(&input_path)
+            .unwrap();
+        // let obj = open_file(&app.input_file).unwrap();
+        let patient_id_exists = obj.element_opt(tags::PATIENT_ID).is_ok();
+        let study_uid_exists = obj.element_opt(tags::STUDY_INSTANCE_UID).is_ok();
+        let series_uid_exists = obj.element_opt(tags::SERIES_INSTANCE_UID).is_ok();
+        let sop_uid_exists = obj.element_opt(tags::SOP_INSTANCE_UID).is_ok();
+        if !patient_id_exists || !study_uid_exists || !series_uid_exists || !sop_uid_exists {
+            println!(" Tags: PatientId, StudyUID, SeriesUID,SopInstanceUID is not exists !");
+            return;
+        }
+        let uuid = obj.meta().transfer_syntax();
+        println!("Transfer Syntax UID: [{}]", uuid);
+
+        let patient_info = PatientInfo::new(&obj);
+        println!("PatientInfo: {:?}", patient_info);
+        let study_info = StudyInfo::new(&obj);
+        println!("StudyInfo: {:?}", study_info);
+        let series_info = SeriesInfo::new(&obj);
+        println!("SeriesInfo: {:?}", series_info);
+        let image_info = ImageInfo::new(&obj);
+        println!("ImageInfo: {:?}", image_info);
+
+        let dicom_info = DicomInfo::new(&obj);
+        println!("DicomInfo: {:?}", dicom_info);
+        let metadata = DcmMeta::new(&obj);
+        println!("DicomInfo: {:?}", metadata);
+        let map_tag = DcmMapMeta::new(&obj);
+        println!("DicomInfo: {:?}-->{:?}", map_tag, map_tag.check_valid());
+        let json = serde_json::to_string(&dicom_info).unwrap();
+        std::fs::write(json_path, json).unwrap();
+
+        convert_ts_with_gdcm(&input_path, &output_path).unwrap();
     }
 }

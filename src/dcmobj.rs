@@ -39,7 +39,7 @@ pub fn file_exists(p0: &PathBuf) -> bool {
 
 pub fn convert_ts_with_gdcm(
     p0: &PathBuf,
-    output_path: String,
+    output_path: &PathBuf,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // 步骤 1: 读取 DICOM 文件
     use gdcm_conv::{PhotometricInterpretation, TransferSyntax};
@@ -97,6 +97,7 @@ pub fn convert_ts_with_gdcm(
 }
 
 // 此修改文件传输语法,存在限制.
+#[warn(dead_code)]
 pub fn convert_ts_with_pixel_data(
     file: &PathBuf,
     output_path: String,
