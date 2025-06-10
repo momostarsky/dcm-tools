@@ -6,9 +6,10 @@ mod patient_info;
 mod series_info;
 mod study_info;
 
-use crate::dcmobj::file_exists;
+use crate::dcmobj::{change_transfer_syntax,  file_exists};
 use clap::Parser;
 use std::path::PathBuf;
+use std::time::Instant;
 
 #[derive(Debug, Parser)]
 #[command(version)]
@@ -32,6 +33,16 @@ fn main() {
     }
     println!("{}: File  exists", app.input_file.to_str().unwrap());
     println!("{}: target file ", app.output_file.to_str().unwrap());
+    let start = Instant::now();
+    change_transfer_syntax(
+        &app.input_file,
+        &app.output_file,
+        gdcm_conv::TransferSyntax::JPEG2000Lossless,
+    )
+    .unwrap();
+    let duration = start.elapsed();
+    println!("耗时: {} 秒", duration.as_secs_f64());
+    println!("耗时: {} 毫秒", duration.as_millis());
 }
 
 // fn convert_ts(p0: &PathBuf, output_path: String) -> Result<(), Box<dyn std::error::Error>> {

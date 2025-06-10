@@ -1,11 +1,14 @@
-use std::io::Cursor;
-use std::path::PathBuf;
 use dicom::core::Tag;
 use dicom::dictionary_std::{tags, uids};
 use dicom::object::DefaultDicomObject;
 use dicom::pixeldata::Transcode;
 use dicom_encoding::snafu::Report;
-use dicom_object::open_file;
+use dicom_object::{open_file, FileDicomObject, InMemDicomObject};
+use gdcm_conv::PhotometricInterpretation;
+use log::warn;
+use std::fs;
+use std::io::{Cursor};
+use std::path::PathBuf;
 
 pub fn get_tag_value<T>(tag: Tag, obj: &DefaultDicomObject, def_value: T) -> T
 where
@@ -33,10 +36,109 @@ pub fn json_key(tag: Tag) -> String {
 }
 
 pub fn file_exists(p0: &PathBuf) -> bool {
-    std::fs::metadata(p0).is_ok()
+    fs::metadata(p0).is_ok()
 }
+/// 递归遍历目录下的所有文件
+pub fn walk_directory<P: Into<PathBuf>>(start_path: P) -> Result<Vec<PathBuf>, std::io::Error> {
+    let start_path = start_path.into();
+    let mut file_paths = Vec::new();
 
+    if start_path.is_dir() {
+        for entry in fs::read_dir(start_path)? {
+            let entry = entry?;
+            let path = entry.path();
 
+            if path.is_dir() {
+                // 递归处理子目录
+                file_paths.extend(walk_directory(path)?);
+            } else {
+                // 收集文件路径
+                file_paths.push(path);
+            }
+        }
+    } else if start_path.is_file() {
+        // 如果是单个文件，则直接添加
+        file_paths.push(start_path);
+    }
+
+    Ok(file_paths)
+}
+pub fn change_transfer_syntax(
+    src: &PathBuf,
+    dest: &PathBuf,
+    ts: gdcm_conv::TransferSyntax,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !file_exists(src) {
+        eprintln!("File does not exist: {:?}", src);
+        Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("File does not exist: {:?}", src),
+        )))?;
+    }
+    let mut dicoms: Vec<(FileDicomObject<InMemDicomObject>, PathBuf)> = Vec::new();
+    match walk_directory(src) {
+        Ok(files) => {
+            for file in files {
+                let obj = match open_file(&file) {
+                    Ok(obj) => obj,
+                    Err(e) => {
+                        eprintln!("Error opening file: {}", e);
+                        continue;
+                    }
+                };
+                dicoms.push((obj, file));
+            }
+        }
+        Err(e) => eprintln!("Error walking directory: {}", e),
+    }
+    for (obj, path) in dicoms.iter() {
+        println!("Processing file: {:?}", path);
+        let mut ibuffer = Vec::new();
+        obj.write_all(&mut ibuffer).unwrap_or_else(|e| {
+            eprintln!("Error writing to buffer: {}", Report::from_error(e));
+        });
+        match gdcm_conv::pipeline(
+            // Input DICOM file buffer
+            ibuffer,
+            // Estimated Length
+            None,
+            // First Transfer Syntax conversion
+            ts,
+            // Photometric conversion
+            PhotometricInterpretation::None,
+            // Second Transfer Syntax conversion
+            gdcm_conv::TransferSyntax::None,
+        ) {
+            Ok(buffer) => {
+                let cursor = Cursor::new(buffer);
+                // Read the DICOM object from the cursor
+                let obj = dicom_object::from_reader(cursor).unwrap_or_else(|e| {
+                    eprintln!("Error reading DICOM object: {}", e);
+                    std::process::exit(1); 
+                });
+                println!(
+                    "Patient Name: {:?}",
+                    get_string(tags::SOP_INSTANCE_UID, &obj)
+                );
+                let target_path = format!(
+                    "{}/{}.dcm",
+                    dest.to_str().unwrap(),
+                    path.file_stem().unwrap().to_str().unwrap()
+                );
+                obj.write_to_file(target_path).unwrap_or_else(|e| {
+                    eprintln!("{}", Report::from_error(e));
+                });
+            }
+            Err(e) => {
+                eprintln!("Error during transcoding: {}", e);
+                return Err(Box::new(e));
+            }
+        };
+    }
+    Ok(())
+}
+ 
+ 
 pub fn convert_ts_with_gdcm(
     p0: &PathBuf,
     output_path: &PathBuf,
@@ -143,13 +245,12 @@ pub fn convert_ts_with_pixel_data(
         obj.write_to_file(output_path).unwrap_or_else(|e| {
             eprintln!("{}", Report::from_error(e));
         });
-    } else{
+    } else {
         // 添加错误提示
         eprintln!("Error: 不支持的传输语法: {}", target_ts.uid());
         return Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
-
-            format!("不支持的传输语法:{:?}",target_ts.uid())
+            format!("不支持的传输语法:{:?}", target_ts.uid()),
         )));
     }
     Ok(())

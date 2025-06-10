@@ -16,3 +16,5 @@ dicom-encoding = "0.8.1"
 #dicom-ul = "0.8.1"
 dicom_codegen = { path = "./dicom_codegen" }
 gdcm_conv = "0.1.7"
+log = "0.4.27"
+rayon = "1.10.0"
