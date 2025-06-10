@@ -3,12 +3,15 @@ use dicom::dictionary_std::{tags, uids};
 use dicom::object::DefaultDicomObject;
 use dicom::pixeldata::Transcode;
 use dicom_encoding::snafu::Report;
-use dicom_object::{open_file, FileDicomObject, InMemDicomObject};
+use dicom_object::{FileDicomObject, InMemDicomObject, open_file};
 use gdcm_conv::PhotometricInterpretation;
 use log::warn;
+use rayon::iter::ParallelIterator;
+use rayon::prelude::IntoParallelRefIterator;
 use std::fs;
-use std::io::{Cursor};
-use std::path::PathBuf;
+use std::fs::File;
+use std::io::{Cursor, Write};
+use std::path::{Path, PathBuf};
 
 pub fn get_tag_value<T>(tag: Tag, obj: &DefaultDicomObject, def_value: T) -> T
 where
@@ -63,19 +66,133 @@ pub fn walk_directory<P: Into<PathBuf>>(start_path: P) -> Result<Vec<PathBuf>, s
 
     Ok(file_paths)
 }
+
+pub fn change_transfer_syntax_iter(
+    src: &PathBuf,
+    dest: &PathBuf,
+    ts: gdcm_conv::TransferSyntax,
+    test_name: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if !file_exists(src) {
+        eprintln!("File does not exist: {:?}", src);
+        return  Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            format!("File or Directory does not exist: {:?}", src),
+        )));
+    }
+    let test_root_name = test_name.unwrap_or("starSky14kWAKAME2k10X");
+    let target_root = format!("{}/{}", dest.to_str().unwrap(), test_root_name);
+
+    let target_path2 = format!(
+        "{}/{}/{}/{}/{}.txt",
+        dest.to_str().unwrap(),
+        test_root_name,
+        "2222",
+        "3333",
+        "12345.99"
+    );
+    // 获取父目录路径
+    let target2_dir = Path::new(&target_path2).parent().unwrap();
+
+    if fs::create_dir_all(&target2_dir).is_err() {
+        eprintln!("Error creating directory: {:?}", dest);
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Error creating directory: {:?}", dest),
+        )));
+    }
+    if fs::write(&target_path2, "test").is_err() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "Error write file in Directory: {:?}-->{:?}",
+                target_path2, target2_dir
+            ),
+        )));
+    }
+    if fs::remove_file(&target_path2).is_err() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!(
+                "Error remove file in Directory: {:?}-->{:?}",
+                target_path2, target2_dir
+            ),
+        )));
+    }
+    if fs::remove_dir_all(&target_root).is_err() {
+        return Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            format!("Error remove  Directory: {:?}", target_root),
+        )));
+    }
+
+    let files = walk_directory(src)?;
+    if files.is_empty() {
+        eprintln!("No DICOM files found in the directory: {:?}", src);
+        return Ok(());
+    }
+
+    files.par_iter().for_each(|file| {
+        match open_file(file) {
+            Ok(obj) => {
+                let patient_id = get_string(tags::PATIENT_ID, &obj);
+                let study_uid = get_string(tags::STUDY_INSTANCE_UID, &obj);
+                let series_uid = get_string(tags::SERIES_INSTANCE_UID, &obj);
+                let sop_uid = get_string(tags::SOP_INSTANCE_UID, &obj);
+                let target_path = format!(
+                    "{:?}/{:?}/{:?}/{:?}/{:?}.dcm",
+                    dest,
+                    patient_id,
+                    study_uid,
+                    series_uid,
+                    sop_uid
+                );
+                // 获取父目录路径
+                let target_dir = Path::new(&target_path).parent().unwrap();
+
+                // 递归创建目录（如果不存在）
+                fs::create_dir_all(target_dir).unwrap();
+                let mut ibuffer = Vec::new();
+                obj.write_all(&mut ibuffer).unwrap_or_else(|e| {
+                    eprintln!("Error writing to buffer: {}", Report::from_error(e));
+                });
+                match gdcm_conv::pipeline(
+                    // Input DICOM file buffer
+                    ibuffer,
+                    // Estimated Length
+                    None,
+                    // First Transfer Syntax conversion
+                    ts,
+                    // Photometric conversion
+                    PhotometricInterpretation::None,
+                    // Second Transfer Syntax conversion
+                    gdcm_conv::TransferSyntax::None,
+                ) {
+                    Ok(buffer) => {
+                        let mut output_file = File::create(target_path).unwrap();
+                        output_file.write_all(&buffer).unwrap();
+                    }
+                    Err(e) => {
+                        eprintln!("Error during transcoding: {}", e);
+                    }
+                };
+            }
+            Err(e) => {
+                eprintln!("Error opening file: {}", e);
+                return;
+            }
+        };
+    });
+    Ok(())
+}
 pub fn change_transfer_syntax(
     src: &PathBuf,
     dest: &PathBuf,
     ts: gdcm_conv::TransferSyntax,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if !file_exists(src) {
-        eprintln!("File does not exist: {:?}", src);
-        Err(Box::new(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            format!("File does not exist: {:?}", src),
-        )))?;
-    }
+    
     let mut dicoms: Vec<(FileDicomObject<InMemDicomObject>, PathBuf)> = Vec::new();
+
     match walk_directory(src) {
         Ok(files) => {
             for file in files {
@@ -114,7 +231,7 @@ pub fn change_transfer_syntax(
                 // Read the DICOM object from the cursor
                 let obj = dicom_object::from_reader(cursor).unwrap_or_else(|e| {
                     eprintln!("Error reading DICOM object: {}", e);
-                    std::process::exit(1); 
+                    std::process::exit(1);
                 });
                 println!(
                     "Patient Name: {:?}",
@@ -137,8 +254,7 @@ pub fn change_transfer_syntax(
     }
     Ok(())
 }
- 
- 
+
 pub fn convert_ts_with_gdcm(
     p0: &PathBuf,
     output_path: &PathBuf,

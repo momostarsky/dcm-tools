@@ -6,7 +6,7 @@ mod patient_info;
 mod series_info;
 mod study_info;
 
-use crate::dcmobj::{change_transfer_syntax,  file_exists};
+use crate::dcmobj::{change_transfer_syntax_iter, file_exists};
 use clap::Parser;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -34,10 +34,11 @@ fn main() {
     println!("{}: File  exists", app.input_file.to_str().unwrap());
     println!("{}: target file ", app.output_file.to_str().unwrap());
     let start = Instant::now();
-    change_transfer_syntax(
+    change_transfer_syntax_iter(
         &app.input_file,
         &app.output_file,
         gdcm_conv::TransferSyntax::JPEG2000Lossless,
+        None,
     )
     .unwrap();
     let duration = start.elapsed();
