@@ -75,7 +75,7 @@ pub fn change_transfer_syntax_iter(
 ) -> Result<(), Box<dyn std::error::Error>> {
     if !file_exists(src) {
         eprintln!("File does not exist: {:?}", src);
-        return  Err(Box::new(std::io::Error::new(
+        return Err(Box::new(std::io::Error::new(
             std::io::ErrorKind::NotFound,
             format!("File or Directory does not exist: {:?}", src),
         )));
@@ -141,24 +141,33 @@ pub fn change_transfer_syntax_iter(
                 let sop_uid = get_string(tags::SOP_INSTANCE_UID, &obj);
                 let target_path = format!(
                     "{:?}/{:?}/{:?}/{:?}/{:?}.dcm",
-                    dest,
-                    patient_id,
-                    study_uid,
-                    series_uid,
-                    sop_uid
+                    dest, patient_id, study_uid, series_uid, sop_uid
                 );
                 // 获取父目录路径
                 let target_dir = Path::new(&target_path).parent().unwrap();
 
                 // 递归创建目录（如果不存在）
                 fs::create_dir_all(target_dir).unwrap();
-                let mut ibuffer = Vec::new();
-                obj.write_all(&mut ibuffer).unwrap_or_else(|e| {
-                    eprintln!("Error writing to buffer: {}", Report::from_error(e));
-                });
+
+                let mut input_buffer = Vec::new();
+                // 将 DICOM 对象写入缓冲区,如果出错,则内存分配失败,直接退出
+                obj.write_all(&mut input_buffer).expect("DefaultDicomObject write to buffer failed");
+
+                // if let Err(e) = obj.write_all(&mut input_buffer) {
+                //     eprintln!(
+                //         "DefaultDicomObject write to buffer failed: {}",
+                //         Report::from_error(e)
+                //     );
+                //     return;
+                // }
+
+                // obj.write_all(&mut buffer)
+                //     .unwrap_or_else(|e| {
+                //         eprintln!("Error writing to buffer: {}", Report::from_error(e));
+                //     });
                 match gdcm_conv::pipeline(
                     // Input DICOM file buffer
-                    ibuffer,
+                    input_buffer,
                     // Estimated Length
                     None,
                     // First Transfer Syntax conversion
@@ -190,7 +199,6 @@ pub fn change_transfer_syntax(
     dest: &PathBuf,
     ts: gdcm_conv::TransferSyntax,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    
     let mut dicoms: Vec<(FileDicomObject<InMemDicomObject>, PathBuf)> = Vec::new();
 
     match walk_directory(src) {
