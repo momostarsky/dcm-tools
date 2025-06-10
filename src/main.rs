@@ -1,21 +1,24 @@
+mod dcm_meta;
 mod dcmobj;
+mod dicom_info;
 mod image_info;
+mod patient_info;
 mod series_info;
 mod study_info;
-mod patient_info;
-mod dicom_info;
-mod dcm_meta;
 
+use crate::dcm_meta::{DcmMapMeta, DcmMeta};
+use crate::dcmobj::{convert_ts_with_gdcm, convert_ts_with_pixel_data, file_exists};
+use crate::dicom_info::DicomInfo;
 use crate::image_info::ImageInfo;
+use crate::patient_info::PatientInfo;
 use crate::series_info::SeriesInfo;
 use crate::study_info::StudyInfo;
 use clap::Parser;
 use dicom::dictionary_std::tags;
+use dicom::encoding::decode::BasicDecode;
+use dicom::encoding::TransferSyntaxIndex;
 use dicom::object::OpenFileOptions;
 use std::path::PathBuf;
-use crate::dcm_meta::{DcmMapMeta, DcmMeta};
-use crate::dicom_info::DicomInfo;
-use crate::patient_info::PatientInfo;
 
 #[derive(Debug, Parser)]
 #[command(version)]
@@ -52,7 +55,7 @@ fn main() {
         return;
     }
     let uuid = obj.meta().transfer_syntax();
-     println!("Transfer Syntax UID: [{}]", uuid);
+    println!("Transfer Syntax UID: [{}]", uuid);
 
     let patient_info = PatientInfo::new(&obj);
     println!("PatientInfo: {:?}", patient_info);
@@ -65,18 +68,69 @@ fn main() {
 
     let dicom_info = DicomInfo::new(&obj);
     println!("DicomInfo: {:?}", dicom_info);
-    let metadata = DcmMeta::new(&obj);  
+    let metadata = DcmMeta::new(&obj);
     println!("DicomInfo: {:?}", metadata);
     let map_tag = DcmMapMeta::new(&obj);
     println!("DicomInfo: {:?}-->{:?}", map_tag, map_tag.check_valid());
     let json = serde_json::to_string(&dicom_info).unwrap();
     std::fs::write(&app.output_file, json).unwrap();
-    
+    use dicom_transfer_syntax_registry::TransferSyntaxRegistry;
+
+    let uid = dicom_info.transfer_syntax_uid.as_str(); // "1.2.840.10008.1.2.1"; // 例如：Explicit VR Little Endian
+    if let Some(ts) = TransferSyntaxRegistry.get(uid) {
+        // ts 是 TransferSyntax 的引用，可以直接使用
+        println!("Found transfer syntax: {:?}", uid);
+        println!("Name: {}", ts.name());
+        println!(
+            "Is Little ? {}",
+            ts.basic_decoder().endianness() == dicom::encoding::Endianness::Little
+        );
+    } else {
+        println!("Unknown transfer syntax UID: {}", uid);
+    }
+
+    let lx = &app.output_file.to_str().unwrap().len();
+ 
+    let filename2 = format!("{}__22.dcm", &app.output_file.to_str().unwrap()[..lx - 5]);
+
+    convert_ts_with_gdcm(&app.input_file, filename2).unwrap();
+
+    let filename3 = format!("{}__33.dcm", &app.output_file.to_str().unwrap()[..lx - 5]);
+    println!("{}", filename3);
+    convert_ts_with_pixel_data(&app.input_file, filename3).unwrap();
 }
 
-fn file_exists(p0: &PathBuf) -> bool {
-    std::fs::metadata(p0).is_ok()
-}
+
+// fn convert_ts(p0: &PathBuf, output_path: String) -> Result<(), Box<dyn std::error::Error>> {
+//     // 步骤 1: 读取 DICOM 文件
+//     let obj = OpenFileOptions::new()
+//         .read_until(tags::PIXEL_DATA)
+//         .open_file(p0)
+//         .unwrap();
+//     // clone 一份对象用于构建新文件
+//     let meta = obj.meta().clone();
+// 
+//     let sop_class_uid = meta.media_storage_sop_class_uid;
+//     let sop_inst_uid = meta.media_storage_sop_instance_uid;
+// 
+//     // 步骤 3: 创建一个新的 DICOM 文件对象并设置传输语法
+//     let file_obj = FileMetaTableBuilder::new()
+//         .media_storage_sop_class_uid(sop_class_uid)
+//         .media_storage_sop_instance_uid(sop_inst_uid)
+//         .transfer_syntax(dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.uid())
+//         .implementation_class_uid(IMPLEMENTATION_CLASS_UID)
+//         .implementation_version_name(IMPLEMENTATION_VERSION_NAME)
+//         .build()
+//         .unwrap();
+// 
+//     // 注意 with_meta 返回新对象（有的版本直接返回 Result）
+//     let file_obj = DefaultDicomObject::new_empty_with_meta(file_obj);
+//     file_obj.write_to_file(output_path)?;
+//     println!("传输语法已修改并保存到  ");
+//     Ok(())
+// }
+// 
+
 
 #[cfg(test)]
 mod tests {
