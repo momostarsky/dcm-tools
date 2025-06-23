@@ -5,8 +5,9 @@ mod image_info;
 mod patient_info;
 mod series_info;
 mod study_info;
+ 
 
-use crate::dcmobj::{change_transfer_syntax_iter, file_exists};
+use crate::dcmobj::{change_transfer_syntax_iter, file_exists, generate_json_file};
 use clap::Parser;
 use std::path::PathBuf;
 use std::time::Instant;
@@ -44,6 +45,10 @@ fn main() {
     let duration = start.elapsed();
     println!("耗时: {} 秒", duration.as_secs_f64());
     println!("耗时: {} 毫秒", duration.as_millis());
+
+
+    let di_com = PathBuf::from("/home/dhz/Documents/JSONDS");
+    generate_json_file(&di_com).unwrap();
 }
 
 // fn convert_ts(p0: &PathBuf, output_path: String) -> Result<(), Box<dyn std::error::Error>> {
