@@ -410,7 +410,7 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
         eprintln!("No DICOM files found in the directory: {:?}", file);
         return Ok(());
     }
-    let mut seris_map = HashMap::new();
+    let mut seris_map: HashMap<(String, u32),  Value> = HashMap::new();
     let mut sop_map: HashMap<(String, String,u32),  Value> = HashMap::new();
     for file in files {
         let obj = OpenFileOptions::new()
@@ -421,7 +421,9 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
                 std::process::exit(1);
             });
         let series_uid = get_string(tags::SERIES_INSTANCE_UID, &obj);
-        if !seris_map.contains_key(&series_uid) {
+        let exists = seris_map.keys().any(|(uid, _)| uid == &series_uid);
+        
+        if !exists {
             let sex = get_string(tags::PATIENT_SEX, &obj);
             let age = get_string(tags::PATIENT_AGE, &obj);
             let name = get_string(tags::PATIENT_NAME, &obj);
@@ -436,7 +438,8 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
             let manufacturer = get_string(tags::MANUFACTURER, &obj);
             let institution_address = get_string(tags::INSTITUTION_ADDRESS, &obj);
             let institution_name = get_string(tags::INSTITUTION_NAME, &obj);
-            let series_json = json!({
+            let series_num =  sn.parse::<u32>().unwrap_or(0);
+            let series_json = json!({ 
                   "00100040": sex,
                   "00101010": age,
                   "0020000E": series_uid,
@@ -453,7 +456,7 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
                   "00080081": institution_address,
                   "00080080": institution_name,
             });
-            seris_map.insert(series_uid.clone(), series_json);
+            seris_map.insert((series_uid.clone(), series_num), series_json);
         }
 
         let series_desc = get_string(tags::SERIES_DESCRIPTION, &obj);
@@ -495,7 +498,11 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
     }
 
     let mut study_vec = Vec::new();
-    for (series_uid, series_json) in seris_map.iter_mut() {
+    // 排序后的 series (series_uid, series_num, series_json)
+    let mut seris_vec: Vec<(&(String, u32), &Value)> = seris_map.iter().collect();
+    seris_vec.sort_by_key(|((_, series_num), _)| *series_num); 
+    
+    for ((series_uid, _series_num), series_json) in seris_vec  {
         // 1. 收集、排序
         let mut sop_list: Vec<(u32, &Value)> = sop_map.iter()
             .filter(|((s_uid, _, _), _)| s_uid == series_uid)
@@ -511,7 +518,7 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
         //     }
         // }
         // 2. 组装 series
-        let series_json = series_json.as_object_mut().unwrap();
+        let series_json = series_json.as_object().unwrap();
         let json_str =  json!({
               "00100040": series_json["00100040"],
               "00101010": series_json["00101010"],

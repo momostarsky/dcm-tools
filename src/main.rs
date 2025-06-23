@@ -34,21 +34,24 @@ fn main() {
     }
     println!("{}: File  exists", app.input_file.to_str().unwrap());
     println!("{}: target file ", app.output_file.to_str().unwrap());
-    let start = Instant::now();
-    change_transfer_syntax_iter(
-        &app.input_file,
-        &app.output_file,
-        gdcm_conv::TransferSyntax::JPEG2000Lossless,
-        None,
-    )
-    .unwrap();
-    let duration = start.elapsed();
-    println!("耗时: {} 秒", duration.as_secs_f64());
-    println!("耗时: {} 毫秒", duration.as_millis());
+    // let start = Instant::now();
+    // change_transfer_syntax_iter(
+    //     &app.input_file,
+    //     &app.output_file,
+    //     gdcm_conv::TransferSyntax::JPEG2000Lossless,
+    //     None,
+    // )
+    // .unwrap();
+    // let duration = start.elapsed();
+    // println!("耗时: {} 秒", duration.as_secs_f64());
+    // println!("耗时: {} 毫秒", duration.as_millis());
 
-
-    let di_com = PathBuf::from("/home/dhz/Documents/JSONDS");
+    let start2 = Instant::now();
+    let di_com = PathBuf::from("/home/dhz/jpdata/CDSS/89269-1.2.156.112605.0.1685486876.2025061710152134339.2.1.1");
     generate_json_file(&di_com).unwrap();
+    let duration2 = start2.elapsed();
+    println!("JSON耗时: {} 秒", duration2.as_secs_f64());
+    println!("JSON耗时: {} 毫秒", duration2.as_millis());
 }
 
 // fn convert_ts(p0: &PathBuf, output_path: String) -> Result<(), Box<dyn std::error::Error>> {
