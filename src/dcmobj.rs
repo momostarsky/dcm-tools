@@ -5,11 +5,14 @@ use dicom::pixeldata::Transcode;
 use dicom_core::Length;
 use dicom_core::header::HasLength;
 use dicom_encoding::snafu::Report;
-use dicom_object::{FileDicomObject, InMemDicomObject, OpenFileOptions, open_file};
+use dicom_object::{
+    FileDicomObject, FileMetaTableBuilder, InMemDicomObject, OpenFileOptions, open_file,
+};
 use gdcm_conv::PhotometricInterpretation;
 use log::warn;
 use rayon::iter::ParallelIterator;
 use rayon::prelude::IntoParallelRefIterator;
+use rayon::prelude::*;
 use serde_json::{Map, Value, json};
 use std::collections::HashMap;
 use std::fs;
@@ -17,6 +20,7 @@ use std::fs::File;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
 use std::ptr::write;
+use crate::dcm_meta::{DcmEntityBaseMeta};
 
 pub fn get_tag_value<T>(tag: Tag, obj: &DefaultDicomObject, def_value: T) -> T
 where
@@ -30,6 +34,8 @@ where
         .and_then(|s| s.parse::<T>().ok())
         .unwrap_or(def_value)
 }
+
+
 
 pub fn get_string(tag: Tag, obj: &DefaultDicomObject) -> String {
     get_tag_value(tag, obj, "".to_string())
@@ -410,107 +416,147 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
         eprintln!("No DICOM files found in the directory: {:?}", file);
         return Ok(());
     }
-    let mut seris_map: HashMap<(String, u32),  Value> = HashMap::new();
-    let mut sop_map: HashMap<(String, String,u32),  Value> = HashMap::new();
-    for file in files {
-        let obj = OpenFileOptions::new()
-            .read_until(tags::PIXEL_DATA)
-            .open_file(&file)
-            .unwrap_or_else(|e| {
-                eprintln!("open file error :{}", Report::from_error(e));
-                std::process::exit(1);
-            });
-        let series_uid = get_string(tags::SERIES_INSTANCE_UID, &obj);
-        let exists = seris_map.keys().any(|(uid, _)| uid == &series_uid);
-        
-        if !exists {
-            let sex = get_string(tags::PATIENT_SEX, &obj);
-            let age = get_string(tags::PATIENT_AGE, &obj);
-            let name = get_string(tags::PATIENT_NAME, &obj);
-            let paid = get_string(tags::PATIENT_ID, &obj);
-            let birth_date = get_string(tags::PATIENT_BIRTH_DATE, &obj);
-            let modality = get_string(tags::MODALITY, &obj);
-            let body_part = get_string(tags::BODY_PART_EXAMINED, &obj);
-            let sn = get_string(tags::SERIES_NUMBER, &obj);
-            let study_date = get_string(tags::STUDY_DATE, &obj);
-            let study_time = get_string(tags::STUDY_TIME, &obj);
-            let acc_num = get_string(tags::ACCESSION_NUMBER, &obj);
-            let manufacturer = get_string(tags::MANUFACTURER, &obj);
-            let institution_address = get_string(tags::INSTITUTION_ADDRESS, &obj);
-            let institution_name = get_string(tags::INSTITUTION_NAME, &obj);
-            let series_num =  sn.parse::<u32>().unwrap_or(0);
-            let series_json = json!({ 
-                  "00100040": sex,
-                  "00101010": age,
-                  "0020000E": series_uid,
-                  "00100010": name,
-                  "00100020": paid,
-                  "00100030": birth_date,
-                  "00180015": body_part,
-                  "00200011": sn ,
-                  "00080020": study_date,
-                  "00080030": study_time,
-                  "00080050": acc_num,
-                  "00080060": modality,
-                  "00080070": manufacturer,
-                  "00080081": institution_address,
-                  "00080080": institution_name,
-            });
-            seris_map.insert((series_uid.clone(), series_num), series_json);
-        }
+    let media_storage_sop_instance_uid = "DHZ.1.2.25.280986007.1.65029756031778";
+    let empty_meta = FileMetaTableBuilder::new()
+        .transfer_syntax(
+            dicom_transfer_syntax_registry::entries::EXPLICIT_VR_LITTLE_ENDIAN.uid(),
+        )
+        .media_storage_sop_class_uid("1.2.840.10008.5.1.4.1.1.1")
+        .media_storage_sop_instance_uid( media_storage_sop_instance_uid)
+        .implementation_class_uid("1.2.345.6.7890.1.234")
+        .build()
+        .unwrap();
+    let results: Vec<(
+        HashMap<(String, u32), Value>,
+        HashMap<(String, String, u32), Value>,
+    )> =
+        files
+            .par_iter()
+            .map(|file| {
+                let mut local_seris_map = HashMap::new();
+                let mut local_sop_map = HashMap::new();
+                let obj =
+                    OpenFileOptions::new()
+                        .read_until(tags::PIXEL_DATA)
+                        .open_file(&file)
+                        .unwrap_or_else(|_| {
+                            FileDicomObject::new_empty_with_meta(empty_meta.clone())
+                        });
 
-        let series_desc = get_string(tags::SERIES_DESCRIPTION, &obj);
-        let pixel_spacing = get_string(tags::PIXEL_SPACING, &obj);
-        let px_spacing_vec: Vec<&str> = pixel_spacing.split("\\").collect();
-        let rows = get_string(tags::ROWS, &obj);
-        let columns = get_string(tags::COLUMNS, &obj);
-        let body_part = get_string(tags::BODY_PART_EXAMINED, &obj);
-        let image_type = get_string(tags::IMAGE_TYPE, &obj);
-        let image_type_vec: Vec<&str> = image_type.split("\\").collect();
-        let pixel_representation = get_string(tags::PIXEL_REPRESENTATION, &obj);
-        let patient_position = get_string(tags::PATIENT_POSITION, &obj);
-        let image_position_patient = get_string(tags::IMAGE_POSITION_PATIENT, &obj);
-        let image_position_patient_vec: Vec<&str> = image_position_patient.split("\\").collect();
-        let image_orientation_patient = get_string(tags::IMAGE_ORIENTATION_PATIENT, &obj);
-        let image_orientation_patient_vec: Vec<&str> =
-            image_orientation_patient.split("\\").collect();
 
-        let instance_num = get_string(tags::INSTANCE_NUMBER, &obj);
-        let slice_thickness = get_string(tags::SLICE_THICKNESS, &obj);
-        let sop_uid = get_string(tags::SOP_INSTANCE_UID, &obj);
-        let inst_num =  instance_num.parse::<u32>().unwrap_or(0);
-        let sop_json = json!({
-          "0008103E": series_desc ,
-          "00280030": px_spacing_vec,
-          "00280010": rows  ,
-          "00280011": columns,
-          "00180015": body_part,
-          "00080008": image_type_vec,
-          "00280103": pixel_representation,
-          "00185100": patient_position,
-          "00200032": image_position_patient_vec,
-          "00180050": slice_thickness,
-          "00200013": instance_num,
-          "00200037": image_orientation_patient_vec,
-          "00080018": sop_uid
-        });
-        sop_map.insert((series_uid, sop_uid,inst_num), sop_json );
+                let mj = DcmEntityBaseMeta::new(&obj);
+                 
+                println!("{:?}", mj);
+
+                if get_string(tags::MEDIA_STORAGE_SOP_INSTANCE_UID, &obj) != media_storage_sop_instance_uid {
+
+
+
+                    let series_uid = get_string(tags::SERIES_INSTANCE_UID, &obj);
+                    let sn = get_string(tags::SERIES_NUMBER, &obj);
+                    let series_num = sn.parse::<u32>().unwrap_or(0);
+                    // if !local_seris_map.contains_key(&(series_uid.clone(), series_num))
+                    {
+                        let sex = get_string(tags::PATIENT_SEX, &obj);
+                        let age = get_string(tags::PATIENT_AGE, &obj);
+                        let name = get_string(tags::PATIENT_NAME, &obj);
+                        let paid = get_string(tags::PATIENT_ID, &obj);
+                        let birth_date = get_string(tags::PATIENT_BIRTH_DATE, &obj);
+                        let modality = get_string(tags::MODALITY, &obj);
+                        let body_part = get_string(tags::BODY_PART_EXAMINED, &obj);
+                        let study_date = get_string(tags::STUDY_DATE, &obj);
+                        let study_time = get_string(tags::STUDY_TIME, &obj);
+                        let acc_num = get_string(tags::ACCESSION_NUMBER, &obj);
+                        let manufacturer = get_string(tags::MANUFACTURER, &obj);
+                        let institution_address = get_string(tags::INSTITUTION_ADDRESS, &obj);
+                        let institution_name = get_string(tags::INSTITUTION_NAME, &obj);
+                        let series_json = json!({
+                              "00100040": sex,
+                              "00101010": age,
+                              "0020000E": series_uid,
+                              "00100010": name,
+                              "00100020": paid,
+                              "00100030": birth_date,
+                              "00180015": body_part,
+                              "00200011": sn ,
+                              "00080020": study_date,
+                              "00080030": study_time,
+                              "00080050": acc_num,
+                              "00080060": modality,
+                              "00080070": manufacturer,
+                              "00080081": institution_address,
+                              "00080080": institution_name,
+                        });
+                        local_seris_map.insert((series_uid.clone(), series_num), series_json);
+                    }
+                    // else{
+                    //     println!("Series already exists: {:?}", series_uid);
+                    // }
+
+                    let series_desc = get_string(tags::SERIES_DESCRIPTION, &obj);
+                    let pixel_spacing = get_string(tags::PIXEL_SPACING, &obj);
+                    let px_spacing_vec: Vec<&str> = pixel_spacing.split("\\").collect();
+                    let rows = get_string(tags::ROWS, &obj);
+                    let columns = get_string(tags::COLUMNS, &obj);
+                    let body_part = get_string(tags::BODY_PART_EXAMINED, &obj);
+                    let image_type = get_string(tags::IMAGE_TYPE, &obj);
+                    let image_type_vec: Vec<&str> = image_type.split("\\").collect();
+                    let pixel_representation = get_string(tags::PIXEL_REPRESENTATION, &obj);
+                    let patient_position = get_string(tags::PATIENT_POSITION, &obj);
+                    let image_position_patient = get_string(tags::IMAGE_POSITION_PATIENT, &obj);
+                    let image_position_patient_vec: Vec<&str> =
+                        image_position_patient.split("\\").collect();
+                    let image_orientation_patient = get_string(tags::IMAGE_ORIENTATION_PATIENT, &obj);
+                    let image_orientation_patient_vec: Vec<&str> =
+                        image_orientation_patient.split("\\").collect();
+
+                    let instance_num = get_string(tags::INSTANCE_NUMBER, &obj);
+                    let slice_thickness = get_string(tags::SLICE_THICKNESS, &obj);
+                    let sop_uid = get_string(tags::SOP_INSTANCE_UID, &obj);
+                    let inst_num = instance_num.parse::<u32>().unwrap_or(0);
+                    let sop_json = json!({
+                      "0008103E": series_desc ,
+                      "00280030": px_spacing_vec,
+                      "00280010": rows  ,
+                      "00280011": columns,
+                      "00180015": body_part,
+                      "00080008": image_type_vec,
+                      "00280103": pixel_representation,
+                      "00185100": patient_position,
+                      "00200032": image_position_patient_vec,
+                      "00180050": slice_thickness,
+                      "00200013": instance_num,
+                      "00200037": image_orientation_patient_vec,
+                      "00080018": sop_uid
+                    });
+                    local_sop_map.insert((series_uid, sop_uid, inst_num), sop_json);
+                }
+                (local_seris_map, local_sop_map)
+            })
+            .collect();
+
+    //结果进行合并
+    let mut seris_map = HashMap::new();
+    let mut sop_map = HashMap::new();
+    for (local_seris, local_sop) in results {
+        seris_map.extend(local_seris);
+        sop_map.extend(local_sop);
     }
-
     let mut study_vec = Vec::new();
     // 排序后的 series (series_uid, series_num, series_json)
     let mut seris_vec: Vec<(&(String, u32), &Value)> = seris_map.iter().collect();
-    seris_vec.sort_by_key(|((_, series_num), _)| *series_num); 
-    
-    for ((series_uid, _series_num), series_json) in seris_vec  {
+    seris_vec.sort_by_key(|((_, series_num), _)| *series_num);
+
+    for ((series_uid, _series_num), series_json) in seris_vec {
         // 1. 收集、排序
-        let mut sop_list: Vec<(u32, &Value)> = sop_map.iter()
+        let mut sop_list: Vec<(u32, &Value)> = sop_map
+            .iter()
             .filter(|((s_uid, _, _), _)| s_uid == series_uid)
             .map(|((_, _, inst_num), sop_json)| (*inst_num, sop_json))
             .collect();
         sop_list.sort_by_key(|(inst_num, _)| *inst_num);
         let sop_vec: Vec<&Value> = sop_list.into_iter().map(|(_, v)| v).collect();
-        
+
         // let mut sop_vec = Vec::new();
         // for (s_uid, sop_json) in sop_map.iter() {
         //     if s_uid.0 == *series_uid {
@@ -519,7 +565,7 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
         // }
         // 2. 组装 series
         let series_json = series_json.as_object().unwrap();
-        let json_str =  json!({
+        let json_str = json!({
               "00100040": series_json["00100040"],
               "00101010": series_json["00101010"],
               "0020000E": series_uid,
@@ -536,18 +582,17 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
               "00080081": series_json["00080081"],
               "00080080": series_json["00080080"],
               "sopData":sop_vec
-        }); 
+        });
         study_vec.push(json_str);
-         
     }
-    
-    let  study_json= json!({
-        "seriesData": study_vec,
-        "hiscode":"89269",
-        "expires":"2025-06-20T13-05-16",
-        "token":"cbcbc2c203fe3877737c0befd6a769fa" 
-     });
-    write_json_file2(&study_json.to_string(), "./tst22.json");
+
+    let study_json = json!({
+       "seriesData": study_vec,
+       "hiscode":"89269",
+       "expires":"2025-06-20T13-05-16",
+       "token":"cbcbc2c203fe3877737c0befd6a769fa"
+    });
+    write_json_file2(&study_json.to_string(), "./tst22-A.json");
     return Ok(());
 }
 
@@ -562,12 +607,8 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
 //     }
 // }
 fn write_json_file2(json: &String, p1: &str) {
-    
-   
     let file = File::create(p1);
-    if (file.is_ok()  ) {
-        file.unwrap()
-            .write_all( json.as_bytes())
-            .unwrap();
+    if (file.is_ok()) {
+        file.unwrap().write_all(json.as_bytes()).unwrap();
     }
 }

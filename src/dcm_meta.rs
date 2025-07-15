@@ -1,8 +1,10 @@
 use crate::dcmobj::get_string;
 use clap::Parser;
-use dicom_codegen::{DicomTagAccessors, TagMapAccessors};
+use dicom_codegen::{DicomTagAccessors, DicomTagMapAccessors, TagMapAccessors};
 use dicom_core::Tag;
 use dicom_object::DefaultDicomObject;
+// use dicom::dictionary_std::tags;
+
 #[derive(DicomTagAccessors, Debug, Parser, Clone)]
 pub struct DcmMeta {
     pub transfer_syntax: String,
@@ -40,9 +42,9 @@ pub struct DcmMapMeta {
 impl DcmMapMeta {
     pub fn new(obj: &DefaultDicomObject) -> Self {
         Self {
-            bit_allocated: obj.element(Tag(0x0028, 0x0100)).unwrap().to_int().unwrap(),
-            bits_stored: obj.element(Tag(0x0028, 0x0101)).unwrap().to_int().unwrap(),
-            high_bit: obj.element(Tag(0x0028, 0x0102)).unwrap().to_int().unwrap(),
+            bit_allocated: obj.element(DcmMapMeta::bit_allocated_tag() ).unwrap().to_int().unwrap(),
+            bits_stored: obj.element( DcmMapMeta::bits_stored_tag()  ).unwrap().to_int().unwrap(),
+            high_bit: obj.element( DcmMapMeta::high_bit_tag()  ).unwrap().to_int().unwrap(),
         }
     }
 
@@ -67,5 +69,28 @@ impl DcmMapMeta {
     // 公共函数使用了私有函数
     pub fn check_valid(&self) -> bool {
         self.validate_bits().is_ok()
+    }
+}
+
+
+#[derive(DicomTagMapAccessors, Debug, Parser, Clone)]
+pub struct DcmEntityBaseMeta {
+    #[map_tag_name(tag_name( dicom::dictionary_std::tags::BITS_ALLOCATED))]
+    pub bit_allocated: u16,
+    #[map_tag_name(tag_name( dicom::dictionary_std::tags::BITS_STORED ))]
+    pub bits_stored: u16,
+    #[map_tag_name(tag_name( dicom::dictionary_std::tags::HIGH_BIT))]
+    pub high_bit: u16,
+}
+
+
+impl DcmEntityBaseMeta {
+    pub fn new(obj: &DefaultDicomObject) -> Self {
+        Self {
+            bit_allocated: obj.element(DcmEntityBaseMeta::BIT_ALLOCATED_TAG).unwrap().to_int().unwrap(),
+            bits_stored: obj.element(DcmEntityBaseMeta::BITS_STORED_TAG).unwrap().to_int().unwrap(),
+            high_bit: obj.element(DcmEntityBaseMeta::HIGH_BIT_TAG).unwrap().to_int().unwrap(),
+
+        }
     }
 }

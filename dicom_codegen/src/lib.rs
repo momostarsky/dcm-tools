@@ -207,3 +207,71 @@ pub fn tag_map_accessors(input: TokenStream) -> TokenStream {
 
     TokenStream::from(expanded)
 }
+
+
+#[proc_macro_derive(DicomTagMapAccessors, attributes(map_tag_name))]
+pub fn dicom_tag_map_accessors(input: TokenStream) -> TokenStream {
+    // 解析字段上的 #[map_tag()] 形式的参数
+    let input = parse_macro_input!(input as DeriveInput);
+
+    let name = &input.ident;
+    let mut getters = vec![];
+    eprintln!("Parsing root name: {:?}", name.to_string());
+
+    if let syn::Data::Struct(ref data) = input.data {
+        for field in &data.fields {
+            //获取属性名称 eg: bit_allocated bits_stored  high_bit
+            let field_ident = field.ident.as_ref().unwrap();
+            eprintln!("field_ident: {:?}", field_ident.to_string());
+            for attr in &field.attrs {
+                if attr.path().is_ident("map_tag_name") {
+                    let mut dicom_ctag = None;
+
+
+                    attr.parse_nested_meta(|meta| {
+                        if meta.path.is_ident("tag_name") {
+                            let content;
+                            parenthesized!(content in meta.input);
+                            eprintln!("Parsing dicom_tag_key: {:?}", content.to_string());
+
+                            let tag_expr: syn::ExprPath = content.parse()?;
+                            dicom_ctag = Some(tag_expr);
+                            return Ok(());
+                        }
+                        Err(meta.error("unrecognized repr"))
+                    }).unwrap();
+                    if let Some(dicom_ctag) = dicom_ctag {
+                        let const_name = syn::Ident::new(
+                            &format!("{}_TAG", field_ident.to_string().to_uppercase()),
+                            field_ident.span(),
+                        );
+                        eprintln!("Parsing dicom_tag_key: {:?}", const_name.to_string());
+                        getters.push(quote::quote! {
+                            pub const #const_name: Tag = #dicom_ctag;
+                        });
+                    }
+                    // if let Some(dicom_ctag) = dicom_ctag {
+                    //     let getter_name = syn::Ident::new(&format!("{}_tag", field_ident), field_ident.span());
+                    //     getters.push(quote::quote! {
+                    //         pub fn #getter_name() -> Tag {
+                    //             #dicom_ctag
+                    //         }
+                    //     });
+                    // }
+                }
+            }
+        }
+    }  else {
+        // Handle other data types, e.g., enums or unions
+        eprintln!("Only structs are supported by this macro.");
+    }
+
+    let expanded = quote! {
+        impl #name {
+            #(#getters)*
+        }
+    };
+
+    TokenStream::from(expanded)
+}
+
