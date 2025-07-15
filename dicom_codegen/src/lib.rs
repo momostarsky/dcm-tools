@@ -225,7 +225,7 @@ pub fn dicom_tag_map_accessors(input: TokenStream) -> TokenStream {
             eprintln!("field_ident: {:?}", field_ident.to_string());
             for attr in &field.attrs {
                 if attr.path().is_ident("map_tag_name") {
-                    let mut dicom_ctag = None;
+                    let mut dicom_ctag: Option<syn::ExprPath> = None;
 
 
                     attr.parse_nested_meta(|meta| {
