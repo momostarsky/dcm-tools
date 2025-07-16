@@ -35,7 +35,26 @@ where
         .unwrap_or(def_value)
 }
 
-
+pub fn get_tag_values<T>(tag: Tag, obj: &DefaultDicomObject) -> Vec<T>
+where
+    T: std::str::FromStr,
+    <T as std::str::FromStr>::Err: std::fmt::Debug,
+{
+    obj.element_opt(tag)
+        .ok()
+        .flatten()
+        .and_then(|e| e.to_str().ok())
+        .and_then(|s|  {
+            let mut result = vec![];
+            for s in s.trim_end().split("\\") {
+                if let Ok(v) = s.parse::<T>() {
+                    result.push(v);
+                }
+            }
+            Some(result)
+        })
+        .unwrap_or_else(|| vec![])
+}
 
 pub fn get_string(tag: Tag, obj: &DefaultDicomObject) -> String {
     get_tag_value(tag, obj, "".to_string())
@@ -445,7 +464,7 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
 
 
                 let mj = DcmEntityBaseMeta::new(&obj);
-                 
+
                 println!("{:?}", mj);
 
                 if get_string(tags::MEDIA_STORAGE_SOP_INSTANCE_UID, &obj) != media_storage_sop_instance_uid {
@@ -494,21 +513,19 @@ pub fn generate_json_file(file: &PathBuf) -> Result<(), Box<dyn std::error::Erro
                     // }
 
                     let series_desc = get_string(tags::SERIES_DESCRIPTION, &obj);
-                    let pixel_spacing = get_string(tags::PIXEL_SPACING, &obj);
-                    let px_spacing_vec: Vec<&str> = pixel_spacing.split("\\").collect();
+
+                    let px_spacing_vec: Vec<String> =get_tag_values(tags::PIXEL_SPACING, &obj);
+
                     let rows = get_string(tags::ROWS, &obj);
                     let columns = get_string(tags::COLUMNS, &obj);
                     let body_part = get_string(tags::BODY_PART_EXAMINED, &obj);
-                    let image_type = get_string(tags::IMAGE_TYPE, &obj);
-                    let image_type_vec: Vec<&str> = image_type.split("\\").collect();
+
+                    let image_type_vec:  Vec<String> =get_tag_values(tags::IMAGE_TYPE, &obj);
                     let pixel_representation = get_string(tags::PIXEL_REPRESENTATION, &obj);
                     let patient_position = get_string(tags::PATIENT_POSITION, &obj);
-                    let image_position_patient = get_string(tags::IMAGE_POSITION_PATIENT, &obj);
-                    let image_position_patient_vec: Vec<&str> =
-                        image_position_patient.split("\\").collect();
-                    let image_orientation_patient = get_string(tags::IMAGE_ORIENTATION_PATIENT, &obj);
-                    let image_orientation_patient_vec: Vec<&str> =
-                        image_orientation_patient.split("\\").collect();
+                    let image_position_patient_vec:  Vec<String> =get_tag_values(tags::IMAGE_POSITION_PATIENT, &obj);
+
+                    let image_orientation_patient_vec:  Vec<String> =get_tag_values(tags::IMAGE_ORIENTATION_PATIENT, &obj);
 
                     let instance_num = get_string(tags::INSTANCE_NUMBER, &obj);
                     let slice_thickness = get_string(tags::SLICE_THICKNESS, &obj);
