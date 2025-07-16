@@ -3,7 +3,7 @@ extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 // use regex::Regex;
-use syn::{DeriveInput, LitInt, parenthesized, parse_macro_input, ItemFn, PatType, FnArg};
+use syn::{parenthesized, parse_macro_input, DeriveInput, FnArg, ItemFn, LitInt, PatType};
 
 #[proc_macro_derive(DicomTagAccessors, attributes(dicom_tag))]
 pub fn dicom_tag_accessors(input: TokenStream) -> TokenStream {
@@ -276,12 +276,6 @@ pub fn dicom_tag_map_accessors(input: TokenStream) -> TokenStream {
 }
 
 
-
-/// 自定义属性宏，在函数执行前后打印日志及参数
-
-
-
-use syn::Ident;
 #[proc_macro_attribute]
 pub fn log_execution(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let input_fn = parse_macro_input!(item as ItemFn);
