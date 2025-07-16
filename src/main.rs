@@ -7,11 +7,17 @@ mod series_info;
 mod study_info;
  
 
-use crate::dcmobj::{change_transfer_syntax_iter, file_exists, generate_json_file};
+use crate::dcmobj::{file_exists, generate_json_file};
 use clap::Parser;
 use std::path::PathBuf;
 use std::time::Instant;
+use dicom_codegen::log_execution;
 use crate::dcm_meta::DcmEntityBaseMeta;
+#[log_execution]
+fn add_numbers(a: i32, b: i32) {
+    let result = a + b;
+    println!("The result of {} + {} is {}", a, b, result);
+}
 
 #[derive(Debug, Parser)]
 #[command(version)]
@@ -53,6 +59,9 @@ fn main() {
     let duration2 = start2.elapsed();
     println!("JSON耗时: {} 秒", duration2.as_secs_f64());
     println!("JSON耗时: {} 毫秒", duration2.as_millis());
+    add_numbers(1, 2);
+
+
 
 }
 

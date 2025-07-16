@@ -1,9 +1,9 @@
 extern crate proc_macro;
 
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 // use regex::Regex;
-use syn::{DeriveInput, LitInt, parenthesized, parse_macro_input};
+use syn::{DeriveInput, LitInt, parenthesized, parse_macro_input, ItemFn, PatType, FnArg};
 
 #[proc_macro_derive(DicomTagAccessors, attributes(dicom_tag))]
 pub fn dicom_tag_accessors(input: TokenStream) -> TokenStream {
@@ -276,3 +276,64 @@ pub fn dicom_tag_map_accessors(input: TokenStream) -> TokenStream {
 }
 
 
+
+/// 自定义属性宏，在函数执行前后打印日志及参数
+
+
+
+use syn::Ident;
+#[proc_macro_attribute]
+pub fn log_execution(_attr: TokenStream, item: TokenStream) -> TokenStream {
+    let input_fn = parse_macro_input!(item as ItemFn);
+    let signature = &input_fn.sig;
+    let fn_name = &signature.ident;
+    let vis = &input_fn.vis;
+    let attrs = &input_fn.attrs;
+    let block = &input_fn.block;
+
+    // 参数列表（带类型）
+    let args: Vec<_> = signature.inputs.iter().map(|arg| match arg {
+        FnArg::Typed(pat_ty) => quote! { #pat_ty },
+        FnArg::Receiver(recv) => quote! { #recv },
+    }).collect();
+
+    // 仅参数名
+    let arg_names: Vec<_> = signature.inputs.iter().map(|arg| match arg {
+        FnArg::Typed(PatType { pat, .. }) => quote! { #pat },
+        FnArg::Receiver(_) => quote! { self },
+    }).collect();
+
+    // 参数名字符串
+    let arg_name_strs: Vec<_> = signature.inputs.iter().map(|arg| match arg {
+        FnArg::Typed(PatType { pat, .. }) => quote! { stringify!(#pat) },
+        FnArg::Receiver(_) => quote! { "self" },
+    }).collect();
+
+    let inner_fn_name = format_ident!("__{}_impl", fn_name);
+
+    let output = &signature.output;
+    let asyncness = &signature.asyncness;
+
+    let expanded = quote! {
+        // 内部原始函数
+        #(#attrs)*
+        #[inline(always)]
+        #vis #asyncness fn #inner_fn_name(#(#args),*) #output
+        #block
+
+        // 包装日志函数
+        #vis #asyncness fn #fn_name(#(#args),*) #output {
+            let __params = vec![#(
+                format!("{} = {:?}", #arg_name_strs, #arg_names)
+            ),*].join(", ");
+            println!("Starting execution of function: {} with args: {}", stringify!(#fn_name), __params);
+
+            let __result = #inner_fn_name(#(#arg_names),*);
+
+            println!("Finished execution of function: {}", stringify!(#fn_name));
+            __result
+        }
+    };
+
+    TokenStream::from(expanded)
+}
